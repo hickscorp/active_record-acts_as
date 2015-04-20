@@ -4,7 +4,7 @@ module ActiveRecord
 
       # Allows to query instances regarding their acts_as behavior.
       def is_a? (klass)
-        super || acting_as?( klass s)
+        super || acting_as?( klass )
       end
       def actor?
         self.class.actor?
