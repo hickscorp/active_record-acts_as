@@ -55,11 +55,12 @@ module ActiveRecord
         end
 
         def actable (options = {})
-          name                  = options.delete( :as ) || :actable
+          name                  = ( options.delete( :as ) || :actable ).to_sym
           reflections           = belongs_to name, { polymorphic: true, dependent: :delete, autosave: true }.merge(options)
           cattr_reader          :actable_reflection do
             reflections.stringify_keys[name.to_s]
           end
+          alias_method          :specific, name
         end
 
         def is_a? (klass)
