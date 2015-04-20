@@ -1,99 +1,99 @@
-
 module ActiveRecord
   module ActsAs
     module InstanceMethods
-      def acting_as?(other = nil)
-        self.class.acting_as? other
+
+      # Allows to query instances regarding their acts_as behavior.
+      def is_a? (klass)
+        super || acting_as?( klass s)
+      end
+      def actor?
+        self.class.actor?
+      end
+      def acting_as? (klass = nil)
+        self.class.acting_as? klass
       end
 
-      def is_a?(klass)
-        super || acting_as?(klass)
+      # Helps to build related instances.
+      def get_or_build_actable (assoc)
+        send( assoc ) || send( "build_#{ assoc }" )
       end
 
-      def acting_as_foreign_key
-        acting_as[acting_as_reflection.foreign_key]
+      # Query wether an association is persisted or not.
+      def actable_persisted? (assoc)
+        !send( assoc ).nil? && !get_or_build_actable(assoc).id.nil? && !foreign_key_for_actable( assoc ).nil?
       end
 
-      # Is the superclass persisted to the database?
-      def acting_as_persisted?
-        return false if acting_as.nil?
-        !acting_as.id.nil? && !acting_as_foreign_key.nil?
+      # Gets an association foreign key.
+      def foreign_key_for_actable (assoc)
+        get_or_build_actable( assoc ).send( acts_infos[assoc][:foreign_key] )
       end
 
-      def actable_must_be_valid
-        if validates_actable
-          unless acting_as.valid?
-            acting_as.errors.each do |att, message|
-              errors.add(att, message)
-            end
-          end
-        end
-      end
-      protected :actable_must_be_valid
-
-      def read_attribute(attr_name, *args, &block)
-        if attribute_method?(attr_name.to_s)
+      def read_attribute (attr_name, *args, &block)
+        if attribute_method? attr_name.to_s
           super
         else
-          acting_as.read_attribute(attr_name, *args, &block)
+          assoc = acts_infos.keys.find{ |assoc| get_or_build_actable( assoc ).respond_to?( attr_name ) }
+          send( assoc ).read_attribute( attr_name, *args, &block )
         end
       end
-
-      def write_attribute(attr_name, value, *args, &block)
-        if attribute_method?(attr_name.to_s)
-          super
-        else
-          acting_as.send(:write_attribute, attr_name, value, *args, &block)
-        end
-      end
-      private :write_attribute
 
       def attributes
-        acting_as_persisted? ? acting_as.attributes.except(acting_as_reflection.type, acting_as_reflection.foreign_key).merge(super) : super
+        super.merge(
+          acts_infos.collect do |assoc, infos|
+            send( assoc ).attributes.except infos[:type], infos[:foreign_key] if actable_persisted? assoc
+          end.inject( :merge )
+        )
       end
 
       def attribute_names
-        acting_as_persisted? ? super | (acting_as.attribute_names - [acting_as_reflection.type, acting_as_reflection.foreign_key]) : super
+        super | (
+          acts_infos.collect do |assoc, infos|
+            get_or_build_actable( assoc ).attribute_names - infos.values if actable_persisted? assoc
+          end
+        ).flatten.uniq
       end
 
-
-      def respond_to?(name, include_private = false, as_original_class = false)
-        as_original_class ? super(name, include_private) : super(name, include_private) || acting_as.respond_to?(name)
+      def first_actable_responding_to (method)
+        acts_infos.keys.find { |assoc| get_or_build_actable( assoc ).respond_to?( method ) }
       end
 
-      def self_respond_to?(name, include_private = false)
-        respond_to? name, include_private, true
+      def respond_to? (name, include_private = false, as_original_class = false)
+        found_in_self   = super name, include_private
+        if as_original_class
+          found_in_self
+        else
+          found_in_self || first_actable_responding_to( name )!=nil
+        end
+
       end
 
       def dup
         duplicate = super
-        duplicate.acting_as = acting_as.dup
+        acts_infos.keys.each{ |assoc| duplicate[assoc] = get_or_build_actable( assoc ).dup }
         duplicate
       end
 
-      def method_missing(method, *args, &block)
-        uses_superclass_for?(method) ? acting_as.send(method, *args, &block) : super
-      end
-
-      def uses_superclass_for?(method)
-        responds_locally = self_respond_to?(method)
-        if acting_as.respond_to?(method)
-          if responds_locally
-            false
-          else
-            # Only use getters if the superclass has
-            # an instance that is linked to this class instance.
-            if acting_as_persisted?
-              true
-            else
-              responds_locally ? false : true
-            end
-          end
+      def method_missing (method, *args, &block)
+        if ( assoc = first_actable_responding_to method )
+          send( assoc ).send( method, *args, &block )
         else
-          # If the superclass doesn't have it, use this class's methods
-          false
+          super
         end
       end
+
+      def self_respond_to? (name, include_private = false)
+        respond_to? name, include_private, true
+      end
+
+      protected
+        def write_attribute (attr_name, value, *args, &block)
+          if attribute_method? attr_name.to_s
+            super
+          else
+            assoc   = acts_infos.keys.find { |name| get_or_build_actable( name ).respond_to?( method ) }
+            send( assoc ).send( :write_attribute, attr_name, value, *args, &block )
+          end
+        end
     end
   end
 end

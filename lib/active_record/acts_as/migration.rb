@@ -1,4 +1,3 @@
-
 module ActiveRecord
   module ActsAs
     module Migration
@@ -9,10 +8,8 @@ module ActiveRecord
           references(name, options)
         end
       end
-
       module Table
         include TableDefinition
-
         def remove_actable(options = {})
           name = options.delete(:as) || :actable
           options[:polymorphic] = true
